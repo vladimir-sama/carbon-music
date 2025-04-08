@@ -7,14 +7,14 @@ import time
 import threading
 import json
 import os
-from typing import Optional, List, TypedDict, Dict
+from typing import Optional, List, TypedDict, Dict, Union, Any
 
 class Track(TypedDict):
     title:str
     url:str
 
 class MusicPlayer:
-    def __init__(self, root:tk.Tk):
+    def __init__(self, root:tk.Tk) -> None:
         self.root : tk.Tk = root
         self.root.title('Carbon Music Player')
         self.root.geometry('500x400')
@@ -64,7 +64,7 @@ class MusicPlayer:
         self.create_widgets()
         self.seek_slider_thread.start()
 
-    def load_playlists_from_json(self, ):
+    def load_playlists_from_json(self) -> None:
         with open('playlists_yt.json', 'r') as file:
             self.playlist.update({'YT - ' + key: value for key, value in json.load(file).items()})
 
@@ -74,7 +74,7 @@ class MusicPlayer:
         self.playlist['SEARCH YT'] = 'SEARCH'
         self.playlist_titles = list(self.playlist.keys())
 
-    def create_widgets(self):
+    def create_widgets(self) -> None:
         # Frame for Playlist selection
         playlist_frame = ttk.Frame(self.root, style='TFrame')
         playlist_frame.pack(pady=10)
@@ -91,7 +91,6 @@ class MusicPlayer:
         self.filter_entry.pack(side=tk.LEFT, padx=(5, 0))
         self.filter_entry.bind('<KeyRelease>', self.filter_tracks)
         self.filter_entry.bind('<Return>', self.search_yt)
-        self.filter_entry.bind()
 
         # Playlist Listbox
         playlist_box_frame = ttk.Frame(self.root, style='TFrame')
@@ -114,6 +113,8 @@ class MusicPlayer:
         self.play_button = ttk.Button(controls_frame, text='Play', command=self.toggle_play)
         self.play_button.pack(side=tk.LEFT, padx=(5, 0))
 
+        self.root.bind('<space>', self.on_space)
+
         # Volume Slider
         self.volume_slider = ttk.Scale(controls_frame, from_=0, to=100, command=self.set_volume, orient='horizontal', style='TScale')
         self.volume_slider.set(self.current_volume)
@@ -127,17 +128,16 @@ class MusicPlayer:
         self.seek_slider.bind('<ButtonPress-1>', self.seek_start)
         self.seek_slider.bind('<ButtonRelease-1>', self.seek_end)
 
-    def load_selected_playlist(self, event):
+    def load_selected_playlist(self, event=None) -> None:
         selected_index : int = self.playlist_combobox.current()
         self.selected_playlist = self.playlist_titles[selected_index]
         self.track_url = self.playlist[self.selected_playlist]  # Get the URL from the dictionary
         self.load_playlist(self.track_url)
 
-    def load_playlist(self, playlist_url:str):
+    def load_playlist(self, playlist_url:str) -> None:
         if not playlist_url:
             return
 
-        # Scrape YouTube Music Playlist using yt-dlp
         if playlist_url == 'SEARCH':
             self.tracks = []
             self.update_playlist_box()
@@ -146,7 +146,7 @@ class MusicPlayer:
             self.update_playlist_box()
         else:
             ydl_opts = {
-                'extract_flat': True,  # Only fetch metadata, not the videos
+                'extract_flat': True,
                 'skip_download': True,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -154,20 +154,19 @@ class MusicPlayer:
                 self.tracks = [{'title': entry['title'], 'url': entry['url']} for entry in info['entries']]
                 self.update_playlist_box()
 
-    def update_playlist_box(self):
-        # Update the Listbox with playlist titles
+    def update_playlist_box(self) -> None:
         self.playlist_box.delete(0, tk.END)
         for idx, track in enumerate(self.tracks):
             self.playlist_box.insert(tk.END, str(idx + 1) + '. ' + track['title'])
 
-    def filter_tracks(self, event=None):
+    def filter_tracks(self, event=None) -> None:
         if self.selected_playlist == 'SEARCH YT':
             return
         search_term : str = self.filter_entry.get().lower()
-        filtered_tracks = [{'title': str(idx + 1) + '. ' + track['title'], 'url': track['url']} for idx, track in enumerate(self.tracks) if search_term in track['title'].lower()]
+        filtered_tracks : List[Track] = [{'title': str(idx + 1) + '. ' + track['title'], 'url': track['url']} for idx, track in enumerate(self.tracks) if search_term in track['title'].lower()]
         self.update_filtered_playlist_box(filtered_tracks)
 
-    def search_yt(self, event=None):
+    def search_yt(self, event=None) -> None:
         if self.selected_playlist != 'SEARCH YT':
             return
         search_term : str = self.filter_entry.get().lower()
@@ -175,22 +174,19 @@ class MusicPlayer:
         self.tracks = [{'title': track['title'], 'url': 'https://music.youtube.com/watch?v=' + track['videoId']} for idx, track in enumerate(search_results)]
         self.update_playlist_box()
 
-    def update_filtered_playlist_box(self, filtered_tracks):
-        # Update the Listbox with filtered track titles
+    def update_filtered_playlist_box(self, filtered_tracks:List[Track]) -> None:
         self.playlist_box.delete(0, tk.END)
         for track in filtered_tracks:
             self.playlist_box.insert(tk.END, track['title'])
 
-    def select_track(self, event):
+    def select_track(self, event=None) -> None:
         selected_index = int(self.playlist_box.get(self.playlist_box.curselection()[0]).split('.')[0]) - 1
         selected_track = self.tracks[selected_index]
         self.track_url = selected_track['url']
         self.play_track()
 
-    def play_track(self):
+    def play_track(self) -> None:
         if self.track_url:
-
-            # Set the media URL to the MPV player
             self.track_length = 0
             self.player.play(self.track_url)
             self.is_playing = True
@@ -198,32 +194,30 @@ class MusicPlayer:
             self.is_paused = False
             self.play_button.config(text='Pause')
 
-    def update_seek_slider(self):
+    def update_seek_slider(self) -> None:
         while True:
             time.sleep(0.10)
             if not self.is_paused and not self.is_user_dragging:
-                # MPV player provides track length, so we can update the slider
                 if self.track_length == 0 and self.player.duration:
-                    self.track_length = int(self.player.duration)  # Get track length in seconds
+                    self.track_length = int(self.player.duration)
                     if self.track_length > 0:
-                        self.seek_slider.config(to=self.track_length)  # Length in seconds
+                        self.seek_slider.config(to=self.track_length)
 
-                # Update seek slider position without triggering slider events
                 if self.player.time_pos:
-                    current_time = int(self.player.time_pos)  # Time in seconds
+                    current_time = int(self.player.time_pos)
                     self.seek_slider.set(current_time)
 
-    def seek_start(self, event):
-        '''Disable auto-seek update when user interacts with the slider'''
+    def seek_start(self, event=None) -> None:
         self.is_user_dragging = True
 
-    def seek_end(self, event):
-        '''Enable the slider and jump to the selected track position'''
+    def seek_end(self, event=None) -> None:
         self.is_user_dragging = False
         position = self.seek_slider.get()
-        self.player.seek(position - self.player.time_pos)  # Seek to the selected position in seconds
+        self.player.seek(position - self.player.time_pos)
 
-    def toggle_play(self):
+    def toggle_play(self) -> None:
+        if not self.track_url:
+            return
         if self.is_playing:
             if self.is_paused:
                 self.player.pause = False
@@ -236,11 +230,15 @@ class MusicPlayer:
         else:
             self.play_track()
 
-    def set_volume(self, volume_level):
+    def on_space(self, event=None) -> Union[str, Any]:
+        if self.root.focus_get() != self.filter_entry and self.root.focus_get() != self.play_button:
+            self.toggle_play()
+            return 'break'
+
+    def set_volume(self, volume_level:int) -> None:
         volume = int(float(volume_level))
         self.player.volume = volume
 
-# Create and start the Tkinter app
 if __name__ == '__main__':
     root = tk.Tk()
     app = MusicPlayer(root)
