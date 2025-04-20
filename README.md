@@ -1,6 +1,6 @@
 # Carbon Music Player
-A Tkinter Youtube Music Playlist Player
+A QT6 Youtube Music Playlist Player
 
-It can search Youtube Music, use Youtube playlists, and local playlists.
+It can search Youtube Music, use Youtube playlists, and local playlists. Also has lyrics label.
 
-It uses Tkinter, YTMusic API, and MPV
+It uses PySide6, YTMusic API, and MPV
