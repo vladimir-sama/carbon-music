@@ -1,245 +1,237 @@
-import tkinter as tk
-from tkinter import ttk
-import yt_dlp
+import os, sys, threading, locale
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QComboBox, QLineEdit, QListWidget, QPushButton, QSlider, QScrollBar, QListWidgetItem
+)
+from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import QFont, QKeyEvent
+
 from ytmusicapi import YTMusic
+from ytmusicapi.models import Lyrics, TimedLyrics, LyricLine
+from ytmusicapi.exceptions import YTMusicUserError
 import mpv
-import time
-import threading
-import json
-import os
+import yt_dlp, json
 from typing import Optional, List, TypedDict, Dict, Union, Any
 
 class Track(TypedDict):
     title:str
     url:str
 
-class MusicPlayer:
-    def __init__(self, root:tk.Tk) -> None:
-        self.root : tk.Tk = root
-        self.root.title('Carbon Music Player')
-        self.root.geometry('500x400')
-        self.root.configure(bg='#080808')
+class MusicPlayer(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
 
-        # Theme
-        self.style : ttk.Style = ttk.Style(root)
-        self.style.theme_use('clam')
-        self.style.configure('TFrame', font=('Roboto Condensed', 10), background='#080808')
-        self.style.configure('TButton', font=('Roboto Condensed', 10), background='#121212', foreground='white')
-        self.style.map(
-            'TButton',
-            background=[('active', 'black')],
-            foreground=[('active', 'white')]
-        )
-        self.style.configure('TCombobox', font=('Roboto Condensed', 10), background='#121212', foreground='white', fieldbackground='#121212', arrowcolor='white')
-        self.style.configure('TScrollbar', font=('Roboto Condensed', 10), background='#121212', foreground='white', troughcolor='#181818', fieldbackground='#121212', arrowcolor='white')
-        self.style.configure('TScale', font=('Roboto Condensed', 10), background='#121212', foreground='white', troughcolor='#181818', fieldbackground='#121212', arrowcolor='white')
-        self.style.configure('TEntry', font=('Roboto Condensed', 10), background='#121212', foreground='white', fieldbackground='#121212')
-
-        # MPV Media Player
+        self.setWindowTitle('Carbon Music Player')
+        self.setFixedSize(500, 600)
+        self.setStyleSheet("font-family: 'PT Sans Narrow';")
+        locale.setlocale(locale.LC_NUMERIC, 'C')
         self.player : mpv.MPV = mpv.MPV(ytdl=True, input_default_bindings=True, input_vo_keyboard=True, video=False)
         self.player.loop_file = 'inf'
-
-        # YT Music API
+        locale.setlocale(locale.LC_NUMERIC, 'C')
         self.yt_music_api : YTMusic = YTMusic()
 
-        # Track and state variables
         self.track_url : Optional[str] = None
         self.is_paused : bool = False
-        self.current_volume : int = 100
         self.is_playing : bool = False
-        self.track_length : float = 0
-        self.is_user_dragging : bool = False  # Flag to track when the user is dragging the slider
-        self.seek_slider_thread : threading.Thread = threading.Thread(target=self.update_seek_slider, daemon=True)
+        self.track_length : float = 0.0
+        self.is_user_dragging : bool = False
 
-        # Playlist data and search
-        self.playlist : Dict[str, str] = {}  # Dictionary to hold playlist names and URLs
-        self.playlist_titles : List[str] = []  # List to hold playlist names
+        self.playlist : Dict[str, str] = {}
+        self.playlist_titles : List[str] = []
         self.selected_playlist : str = ''
-        self.tracks : List[Track] = []  # List to hold tracks from the selected playlist
+        self.tracks : List[Track] = []
+        self.lyrics : List[Union[Lyrics, TimedLyrics]] = []
 
-        # Load playlists from JSON file
-        self.load_playlists_from_json()
+        self.load_playlists()
+        self.init_ui()
 
-        # GUI Components
-        self.create_widgets()
-        self.seek_slider_thread.start()
+        self.seek_timer : QTimer = QTimer()
+        self.seek_timer.timeout.connect(self.update_seek_slider)
+        self.seek_timer.start(50)
 
-    def load_playlists_from_json(self) -> None:
-        with open('playlists_yt.json', 'r') as file:
-            self.playlist.update({'YT - ' + key: value for key, value in json.load(file).items()})
-
-        with open('playlists_local.json', 'r') as file:
-            self.playlist.update({'LOCAL - ' + key: value for key, value in json.load(file).items()})
-
+    def load_playlists(self) -> None:
+        with open('playlists_yt.json', 'r') as f:
+            self.playlist.update({f'YT - {k}': v for k, v in json.load(f).items()})
+        with open('playlists_local.json', 'r') as f:
+            self.playlist.update({f'LOCAL - {k}': v for k, v in json.load(f).items()})
         self.playlist['SEARCH YT'] = 'SEARCH'
         self.playlist_titles = list(self.playlist.keys())
 
-    def create_widgets(self) -> None:
-        # Frame for Playlist selection
-        playlist_frame = ttk.Frame(self.root, style='TFrame')
-        playlist_frame.pack(pady=10)
+    def init_ui(self) -> None:
+        layout : QVBoxLayout = QVBoxLayout()
 
-        self.playlist_combobox = ttk.Combobox(playlist_frame, values=self.playlist_titles, width=50, style='TCombobox', font=('Roboto Condensed', 10))
-        self.playlist_combobox.pack(side=tk.LEFT, padx=(5, 0))
-        self.playlist_combobox.bind('<<ComboboxSelected>>', self.load_selected_playlist)
+        self.combo_playlist : QComboBox = QComboBox()
+        self.combo_playlist.addItems(self.playlist_titles)
+        self.combo_playlist.currentIndexChanged.connect(self.load_selected_playlist)
+        layout.addWidget(self.combo_playlist)
 
-        # Search Bar for filtering tracks
-        search_frame = ttk.Frame(self.root, style='TFrame')
-        search_frame.pack(pady=10)
+        self.entry_filter : QLineEdit = QLineEdit()
+        self.entry_filter.setPlaceholderText('Search or filter tracks...')
+        self.entry_filter.textChanged.connect(self.filter_tracks)
+        self.entry_filter.returnPressed.connect(self.search_yt)
+        layout.addWidget(self.entry_filter)
 
-        self.filter_entry = ttk.Entry(search_frame, width=50, style='TEntry', font=('Roboto Condensed', 10))
-        self.filter_entry.pack(side=tk.LEFT, padx=(5, 0))
-        self.filter_entry.bind('<KeyRelease>', self.filter_tracks)
-        self.filter_entry.bind('<Return>', self.search_yt)
+        self.list_tracks : QListWidget = QListWidget()
+        self.list_tracks.itemDoubleClicked.connect(self.select_track)
+        layout.addWidget(self.list_tracks)
 
-        # Playlist Listbox
-        playlist_box_frame = ttk.Frame(self.root, style='TFrame')
-        playlist_box_frame.pack(pady=10, fill=tk.Y, expand=True)
-        self.playlist_box = tk.Listbox(playlist_box_frame, height=10, width=65, font=('Roboto Condensed', 10), background='#121212', foreground='white')
-        self.playlist_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.playlist_box.bind('<Double-Button-1>', self.select_track)
+        control_layout : QHBoxLayout = QHBoxLayout()
 
-        # Scrollbar
-        self.scrollbar = ttk.Scrollbar(playlist_box_frame, style='TScrollbar')
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.button_play : QPushButton = QPushButton('Play')
+        self.button_play.clicked.connect(self.toggle_play)
+        control_layout.addWidget(self.button_play)
 
-        self.playlist_box.config(yscrollcommand = self.scrollbar.set)
-        self.scrollbar.config(command = self.playlist_box.yview)
+        self.slider_volume : QSlider = QSlider(Qt.Horizontal)
+        self.slider_volume.setRange(0, 100)
+        self.slider_volume.setValue(100)
+        self.slider_volume.valueChanged.connect(self.set_volume)
+        control_layout.addWidget(self.slider_volume)
 
-        # Control Frame for Play/Pause, Volume, and Seek
-        controls_frame = ttk.Frame(self.root, style='TFrame')
-        controls_frame.pack(pady=10)
+        self.slider_seek : QSlider = QSlider(Qt.Horizontal)
+        self.slider_seek.setRange(0, 100)
+        self.slider_seek.sliderPressed.connect(self.seek_start)
+        self.slider_seek.sliderReleased.connect(self.seek_end)
+        control_layout.addWidget(self.slider_seek)
 
-        self.play_button = ttk.Button(controls_frame, text='Play', command=self.toggle_play)
-        self.play_button.pack(side=tk.LEFT, padx=(5, 0))
+        layout.addLayout(control_layout)
 
-        self.root.bind('<space>', self.on_space)
+        self.label_track : QLabel = QLabel('(NA)')
+        self.label_lyrics : QLabel = QLabel('(LYRICS)')
+        self.label_track.setAlignment(Qt.AlignCenter)
+        self.label_lyrics.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label_track)
+        layout.addWidget(self.label_lyrics)
 
-        # Volume Slider
-        self.volume_slider = ttk.Scale(controls_frame, from_=0, to=100, command=self.set_volume, orient='horizontal', style='TScale')
-        self.volume_slider.set(self.current_volume)
-        self.volume_slider.pack(side=tk.LEFT, padx=(10, 0))
+        self.setLayout(layout)
+        self.combo_playlist.setCurrentIndex(-1)
 
-        # Seek Slider
-        self.seek_slider = ttk.Scale(controls_frame, from_=0, to=100, orient='horizontal', length=240, style='TScale')
-        self.seek_slider.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
-
-        # Bind seek slider events
-        self.seek_slider.bind('<ButtonPress-1>', self.seek_start)
-        self.seek_slider.bind('<ButtonRelease-1>', self.seek_end)
-
-    def load_selected_playlist(self, event=None) -> None:
-        selected_index : int = self.playlist_combobox.current()
-        self.selected_playlist = self.playlist_titles[selected_index]
-        self.track_url = self.playlist[self.selected_playlist]  # Get the URL from the dictionary
-        self.load_playlist(self.track_url)
+    @Slot()
+    def load_selected_playlist(self) -> None:
+        index = self.combo_playlist.currentIndex()
+        self.selected_playlist = self.playlist_titles[index]
+        playlist_url = self.playlist[self.selected_playlist]
+        self.load_playlist(playlist_url)
 
     def load_playlist(self, playlist_url:str) -> None:
         if not playlist_url:
             return
-
         if playlist_url == 'SEARCH':
             self.tracks = []
-            self.update_playlist_box()
+            self.update_track_list()
         elif os.path.isdir(playlist_url):
             self.tracks = [{'title': entry, 'url': os.path.join(playlist_url, entry)} for entry in sorted(os.listdir(playlist_url))]
-            self.update_playlist_box()
+            self.update_track_list()
         else:
-            ydl_opts = {
-                'extract_flat': True,
-                'skip_download': True,
-            }
+            ydl_opts : dict = {'extract_flat': True, 'skip_download': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(playlist_url, download=False)
+                info : dict = ydl.extract_info(playlist_url, download=False)
                 self.tracks = [{'title': entry['title'], 'url': entry['url']} for entry in info['entries']]
-                self.update_playlist_box()
+                self.update_track_list()
 
-    def update_playlist_box(self) -> None:
-        self.playlist_box.delete(0, tk.END)
+    def update_track_list(self) -> None:
+        self.list_tracks.clear()
         for idx, track in enumerate(self.tracks):
-            self.playlist_box.insert(tk.END, str(idx + 1) + '. ' + track['title'])
+            self.list_tracks.addItem(f'{idx + 1}. {track['title']}')
 
-    def filter_tracks(self, event=None) -> None:
+    def filter_tracks(self) -> None:
         if self.selected_playlist == 'SEARCH YT':
             return
-        search_term : str = self.filter_entry.get().lower()
-        filtered_tracks : List[Track] = [{'title': str(idx + 1) + '. ' + track['title'], 'url': track['url']} for idx, track in enumerate(self.tracks) if search_term in track['title'].lower()]
-        self.update_filtered_playlist_box(filtered_tracks)
+        keyword : str = self.entry_filter.text().lower()
+        filtered_tracks : List[Track] = [{'title': str(idx + 1) + '. ' + track['title'], 'url': track['url']} for idx, track in enumerate(self.tracks) if keyword in track['title'].lower()]
+        self.list_tracks.clear()
+        for track in filtered_tracks:
+            self.list_tracks.addItem(track['title'])
 
-    def search_yt(self, event=None) -> None:
+    def search_yt(self) -> None:
         if self.selected_playlist != 'SEARCH YT':
             return
-        search_term : str = self.filter_entry.get().lower()
-        search_results : List[dict] = self.yt_music_api.search(search_term, filter='songs')
-        self.tracks = [{'title': track['title'], 'url': 'https://music.youtube.com/watch?v=' + track['videoId']} for idx, track in enumerate(search_results)]
-        self.update_playlist_box()
+        term : str = self.entry_filter.text().lower()
+        results : List[dict] = self.yt_music_api.search(term, filter='songs')
+        self.tracks = [{'title': item['title'], 'url': f'https://music.youtube.com/watch?v={item['videoId']}'} for item in results]
+        self.update_track_list()
 
-    def update_filtered_playlist_box(self, filtered_tracks:List[Track]) -> None:
-        self.playlist_box.delete(0, tk.END)
-        for track in filtered_tracks:
-            self.playlist_box.insert(tk.END, track['title'])
-
-    def select_track(self, event=None) -> None:
-        selected_index = int(self.playlist_box.get(self.playlist_box.curselection()[0]).split('.')[0]) - 1
-        selected_track = self.tracks[selected_index]
-        self.track_url = selected_track['url']
+    def select_track(self) -> None:
+        current_item : Optional[QListWidgetItem] = self.list_tracks.currentItem()
+        if not current_item:
+            return
+        index : int = int(current_item.text().split('.')[0]) - 1
+        self.track_url = self.tracks[index]['url']
         self.play_track()
 
     def play_track(self) -> None:
+        self.label_track.setText('(NA)')
+        self.label_lyrics.setText('(LYRICS)')
+
+        if self.track_url.startswith('https://music.youtube.com/watch?v='):
+            video_id : str = self.track_url.split('=')[-1]
+            try:
+                details : dict = self.yt_music_api.get_song(video_id)
+                if details:
+                    self.label_track.setText(details['videoDetails']['title'])
+                data : dict = self.yt_music_api.get_watch_playlist(video_id, limit=1)
+                self.lyrics = self.yt_music_api.get_lyrics(data['lyrics'], True)
+                if not self.lyrics.get('hasTimestamps'):
+                    self.lyrics = []
+                else:
+                    self.label_lyrics.setText('...')
+            except (KeyError, YTMusicUserError):
+                self.lyrics = []
+        else:
+            self.label_track.setText(os.path.basename(self.track_url))
+
         if self.track_url:
             self.track_length = 0
             self.player.play(self.track_url)
             self.is_playing = True
-            self.player.pause = False
             self.is_paused = False
-            self.play_button.config(text='Pause')
-
-    def update_seek_slider(self) -> None:
-        while True:
-            time.sleep(0.10)
-            if not self.is_paused and not self.is_user_dragging:
-                if self.track_length == 0 and self.player.duration:
-                    self.track_length = int(self.player.duration)
-                    if self.track_length > 0:
-                        self.seek_slider.config(to=self.track_length)
-
-                if self.player.time_pos:
-                    current_time = int(self.player.time_pos)
-                    self.seek_slider.set(current_time)
-
-    def seek_start(self, event=None) -> None:
-        self.is_user_dragging = True
-
-    def seek_end(self, event=None) -> None:
-        self.is_user_dragging = False
-        position = self.seek_slider.get()
-        self.player.seek(position - self.player.time_pos)
+            self.player.pause = False
+            self.button_play.setText('Pause')
 
     def toggle_play(self) -> None:
-        if not self.track_url:
-            return
         if self.is_playing:
-            if self.is_paused:
-                self.player.pause = False
-                self.play_button.config(text='Pause')
-                self.is_paused = False
-            else:
-                self.player.pause = True
-                self.play_button.config(text='Play')
-                self.is_paused = True
-        else:
+            self.is_paused = not self.is_paused
+            self.player.pause = self.is_paused
+            self.button_play.setText('Play' if self.is_paused else 'Pause')
+        elif self.track_url:
             self.play_track()
 
-    def on_space(self, event=None) -> Union[str, Any]:
-        if self.root.focus_get() != self.filter_entry and self.root.focus_get() != self.play_button:
-            self.toggle_play()
-            return 'break'
+    def set_volume(self, value:int) -> None:
+        self.player.volume = value
 
-    def set_volume(self, volume_level:int) -> None:
-        volume = int(float(volume_level))
-        self.player.volume = volume
+    def seek_start(self) -> None:
+        self.is_user_dragging = True
+
+    def seek_end(self) -> None:
+        value : int = self.slider_seek.value()
+        self.player.seek(value, reference='absolute')
+        self.is_user_dragging = False
+
+    def update_seek_slider(self) -> None:
+        if not self.is_paused and not self.is_user_dragging:
+            if self.track_length == 0 and self.player.duration:
+                self.track_length = int(self.player.duration)
+                self.slider_seek.setRange(0, self.track_length)
+            if self.player.time_pos:
+                current_time_ms : int = int(self.player.time_pos * 1000)
+                current_time : int = int(self.player.time_pos)
+                self.slider_seek.setValue(current_time)
+                if self.lyrics:
+                    for line in self.lyrics['lyrics']:
+                        if line.start_time <= current_time_ms <= line.end_time:
+                            self.label_lyrics.setText(line.text)
+                            break
+                    else:
+                        self.label_lyrics.setText('...')
+
 
 if __name__ == '__main__':
-    root = tk.Tk()
-    app = MusicPlayer(root)
-    root.mainloop()
+    file_dir : str = os.path.dirname(os.path.realpath(__file__))
+    frozen_dir = os.path.dirname(sys.executable)
+    executable_dir : str = os.path.dirname(os.path.realpath(__file__))
+    if getattr(sys, 'frozen', False):
+        executable_dir = os.path.dirname(sys.executable)
+    os.chdir(executable_dir)
+    app : QApplication = QApplication(sys.argv)
+    player : MusicPlayer = MusicPlayer()
+    player.show()
+    sys.exit(app.exec())
