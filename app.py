@@ -23,11 +23,8 @@ class MusicPlayer(QWidget):
 
         self.setWindowTitle('Carbon Music Player')
         self.setFixedSize(500, 600)
-        self.setStyleSheet("font-family: 'PT Sans Narrow';")
-        locale.setlocale(locale.LC_NUMERIC, 'C')
-        self.player : mpv.MPV = mpv.MPV(ytdl=True, input_default_bindings=True, input_vo_keyboard=True, video=False)
-        self.player.loop_file = 'inf'
-        locale.setlocale(locale.LC_NUMERIC, 'C')
+        self.player : Optional[mpv.MPV] = None
+        self.set_player()
         self.yt_music_api : YTMusic = YTMusic()
 
         self.track_url : Optional[str] = None
@@ -45,9 +42,15 @@ class MusicPlayer(QWidget):
         self.load_playlists()
         self.init_ui()
 
-        self.seek_timer : QTimer = QTimer()
-        self.seek_timer.timeout.connect(self.update_seek_slider)
-        self.seek_timer.start(50)
+        self.lyrics_timer : QTimer = QTimer()
+        self.lyrics_timer.timeout.connect(self.update_lyrics)
+        self.lyrics_timer.start(50)
+
+    def set_player(self) -> None:
+        locale.setlocale(locale.LC_NUMERIC, 'C')
+        self.player : mpv.MPV = mpv.MPV(ytdl=True, input_default_bindings=True, input_vo_keyboard=True, osc=True)
+        self.player.loop_file = 'inf'
+        locale.setlocale(locale.LC_NUMERIC, 'C')
 
     def load_playlists(self) -> None:
         with open('playlists_yt.json', 'r') as f:
@@ -75,25 +78,9 @@ class MusicPlayer(QWidget):
         self.list_tracks.itemDoubleClicked.connect(self.select_track)
         layout.addWidget(self.list_tracks)
 
-        control_layout : QHBoxLayout = QHBoxLayout()
-
-        self.button_play : QPushButton = QPushButton('Play')
-        self.button_play.clicked.connect(self.toggle_play)
-        control_layout.addWidget(self.button_play)
-
-        self.slider_volume : QSlider = QSlider(Qt.Horizontal)
-        self.slider_volume.setRange(0, 100)
-        self.slider_volume.setValue(100)
-        self.slider_volume.valueChanged.connect(self.set_volume)
-        control_layout.addWidget(self.slider_volume)
-
-        self.slider_seek : QSlider = QSlider(Qt.Horizontal)
-        self.slider_seek.setRange(0, 100)
-        self.slider_seek.sliderPressed.connect(self.seek_start)
-        self.slider_seek.sliderReleased.connect(self.seek_end)
-        control_layout.addWidget(self.slider_seek)
-
-        layout.addLayout(control_layout)
+        self.button_stop : QPushButton = QPushButton('Stop')
+        self.button_stop.clicked.connect(self.stop_playback)
+        layout.addWidget(self.button_stop)
 
         self.label_track : QLabel = QLabel('(NA)')
         self.label_lyrics : QLabel = QLabel('(LYRICS)')
@@ -158,9 +145,14 @@ class MusicPlayer(QWidget):
         self.track_url = self.tracks[index]['url']
         self.play_track()
 
-    def play_track(self) -> None:
+    def stop_playback(self) -> None:
+        self.player.stop()
+        self.set_player()
         self.label_track.setText('(NA)')
         self.label_lyrics.setText('(LYRICS)')
+
+    def play_track(self) -> None:
+        self.stop_playback()
 
         if self.track_url.startswith('https://music.youtube.com/watch?v='):
             video_id : str = self.track_url.split('=')[-1]
@@ -183,38 +175,12 @@ class MusicPlayer(QWidget):
             self.track_length = 0
             self.player.play(self.track_url)
             self.is_playing = True
-            self.is_paused = False
             self.player.pause = False
-            self.button_play.setText('Pause')
 
-    def toggle_play(self) -> None:
-        if self.is_playing:
-            self.is_paused = not self.is_paused
-            self.player.pause = self.is_paused
-            self.button_play.setText('Play' if self.is_paused else 'Pause')
-        elif self.track_url:
-            self.play_track()
-
-    def set_volume(self, value:int) -> None:
-        self.player.volume = value
-
-    def seek_start(self) -> None:
-        self.is_user_dragging = True
-
-    def seek_end(self) -> None:
-        value : int = self.slider_seek.value()
-        self.player.seek(value, reference='absolute')
-        self.is_user_dragging = False
-
-    def update_seek_slider(self) -> None:
-        if not self.is_paused and not self.is_user_dragging:
-            if self.track_length == 0 and self.player.duration:
-                self.track_length = int(self.player.duration)
-                self.slider_seek.setRange(0, self.track_length)
+    def update_lyrics(self) -> None:
+        if not self.player.pause:
             if self.player.time_pos:
                 current_time_ms : int = int(self.player.time_pos * 1000)
-                current_time : int = int(self.player.time_pos)
-                self.slider_seek.setValue(current_time)
                 if self.lyrics:
                     for line in self.lyrics['lyrics']:
                         if line.start_time <= current_time_ms <= line.end_time:
