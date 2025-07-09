@@ -9,8 +9,7 @@ from PySide6.QtGui import QFont, QKeyEvent
 from ytmusicapi import YTMusic
 from ytmusicapi.models import Lyrics, TimedLyrics, LyricLine
 from ytmusicapi.exceptions import YTMusicUserError
-import mpv
-import yt_dlp, json
+import yt_dlp, json, shutil, subprocess
 from typing import Optional, List, TypedDict, Dict, Union, Any
 
 class Track(TypedDict):
@@ -23,34 +22,18 @@ class MusicPlayer(QWidget):
 
         self.setWindowTitle('Carbon Music Player')
         self.setFixedSize(500, 600)
-        self.player : Optional[mpv.MPV] = None
-        self.set_player()
         self.yt_music_api : YTMusic = YTMusic()
+        self.player : Optional[subprocess.Popen] = None
 
         self.track_url : Optional[str] = None
-        self.is_paused : bool = False
-        self.is_playing : bool = False
-        self.track_length : float = 0.0
-        self.is_user_dragging : bool = False
 
         self.playlist : Dict[str, str] = {}
         self.playlist_titles : List[str] = []
         self.selected_playlist : str = ''
         self.tracks : List[Track] = []
-        self.lyrics : List[Union[Lyrics, TimedLyrics]] = []
 
         self.load_playlists()
         self.init_ui()
-
-        self.lyrics_timer : QTimer = QTimer()
-        self.lyrics_timer.timeout.connect(self.update_lyrics)
-        self.lyrics_timer.start(50)
-
-    def set_player(self) -> None:
-        locale.setlocale(locale.LC_NUMERIC, 'C')
-        self.player : mpv.MPV = mpv.MPV(ytdl=True, input_default_bindings=True, input_vo_keyboard=True, osc=True)
-        self.player.loop_file = 'inf'
-        locale.setlocale(locale.LC_NUMERIC, 'C')
 
     def load_playlists(self) -> None:
         with open('playlists_yt.json', 'r') as f:
@@ -78,16 +61,9 @@ class MusicPlayer(QWidget):
         self.list_tracks.itemDoubleClicked.connect(self.select_track)
         layout.addWidget(self.list_tracks)
 
-        self.button_stop : QPushButton = QPushButton('Stop')
-        self.button_stop.clicked.connect(self.stop_playback)
-        layout.addWidget(self.button_stop)
-
         self.label_track : QLabel = QLabel('(NA)')
-        self.label_lyrics : QLabel = QLabel('(LYRICS)')
         self.label_track.setAlignment(Qt.AlignCenter)
-        self.label_lyrics.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.label_track)
-        layout.addWidget(self.label_lyrics)
 
         self.setLayout(layout)
         self.combo_playlist.setCurrentIndex(-1)
@@ -145,14 +121,10 @@ class MusicPlayer(QWidget):
         self.track_url = self.tracks[index]['url']
         self.play_track()
 
-    def stop_playback(self) -> None:
-        self.player.stop()
-        self.set_player()
-        self.label_track.setText('(NA)')
-        self.label_lyrics.setText('(LYRICS)')
-
     def play_track(self) -> None:
-        self.stop_playback()
+        if self.player:
+            self.player.terminate()
+        self.label_track.setText('(NA)')
 
         if self.track_url.startswith('https://music.youtube.com/watch?v='):
             video_id : str = self.track_url.split('=')[-1]
@@ -160,35 +132,27 @@ class MusicPlayer(QWidget):
                 details : dict = self.yt_music_api.get_song(video_id)
                 if details:
                     self.label_track.setText(details['videoDetails']['title'])
-                data : dict = self.yt_music_api.get_watch_playlist(video_id, limit=1)
-                self.lyrics = self.yt_music_api.get_lyrics(data['lyrics'], True)
-                if not self.lyrics.get('hasTimestamps'):
-                    self.lyrics = []
-                else:
-                    self.label_lyrics.setText('...')
             except (KeyError, YTMusicUserError):
-                self.lyrics = []
+                pass
         else:
             self.label_track.setText(os.path.basename(self.track_url))
 
         if self.track_url:
-            self.track_length = 0
-            self.player.play(self.track_url)
-            self.is_playing = True
-            self.player.pause = False
+            self.player = subprocess.Popen(
+                [
+                    shutil.which('mpv'),
+                    '--ytdl=yes',
+                    '--osc=yes',
+                    '--force-window=yes',
+                    '--loop=inf',
+                    self.track_url
+                ]
+            )
 
-    def update_lyrics(self) -> None:
-        if not self.player.pause:
-            if self.player.time_pos:
-                current_time_ms : int = int(self.player.time_pos * 1000)
-                if self.lyrics:
-                    for line in self.lyrics['lyrics']:
-                        if line.start_time <= current_time_ms <= line.end_time:
-                            self.label_lyrics.setText(line.text)
-                            break
-                    else:
-                        self.label_lyrics.setText('...')
-
+    def closeEvent(self, event):
+        if self.player:
+            self.player.terminate()
+        return super().closeEvent(event)
 
 if __name__ == '__main__':
     file_dir : str = os.path.dirname(os.path.realpath(__file__))
