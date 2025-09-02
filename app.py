@@ -1,4 +1,4 @@
-import os, sys, threading, locale
+import os, sys, threading, locale, configparser
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QLineEdit, QListWidget, QPushButton, QSlider, QScrollBar, QListWidgetItem
@@ -12,6 +12,13 @@ from ytmusicapi.exceptions import YTMusicUserError
 import yt_dlp, json, shutil, subprocess
 from typing import Optional, List, TypedDict, Dict, Union, Any
 
+file_dir : str = os.path.dirname(os.path.realpath(__file__))
+frozen_dir = os.path.dirname(sys.executable)
+executable_dir : str = os.path.dirname(os.path.realpath(__file__))
+if getattr(sys, 'frozen', False):
+    executable_dir = os.path.dirname(sys.executable)
+
+
 class Track(TypedDict):
     title:str
     url:str
@@ -19,9 +26,19 @@ class Track(TypedDict):
 class MusicPlayer(QWidget):
     def __init__(self) -> None:
         super().__init__()
+        
+        self.config: configparser.ConfigParser = configparser.ConfigParser()
+        self.config.read(os.path.join(executable_dir, 'app.ini'))
+        
 
         self.setWindowTitle('Carbon Music Player')
         self.setFixedSize(500, 600)
+        theme_user : str = self.config.get('user', 'theme', fallback='default')
+        theme_file : str = self.config.get('themes', theme_user, fallback='none.qss')
+        with open(os.path.join(executable_dir, theme_file), 'r') as file:
+            self.setStyleSheet(file.read())
+
+
         self.yt_music_api : YTMusic = YTMusic()
         self.player : Optional[subprocess.Popen] = None
 
@@ -36,10 +53,10 @@ class MusicPlayer(QWidget):
         self.init_ui()
 
     def load_playlists(self) -> None:
-        with open('playlists_yt.json', 'r') as f:
-            self.playlist.update({f'YT - {k}': v for k, v in json.load(f).items()})
-        with open('playlists_local.json', 'r') as f:
-            self.playlist.update({f'LOCAL - {k}': v for k, v in json.load(f).items()})
+        with open(os.path.join(executable_dir, 'playlists_yt.json'), 'r') as file:
+            self.playlist.update({f'YT - {k}': v for k, v in json.load(file).items()})
+        with open(os.path.join(executable_dir, 'playlists_local.json'), 'r') as file:
+            self.playlist.update({f'LOCAL - {k}': v for k, v in json.load(file).items()})
         self.playlist['SEARCH YT'] = 'SEARCH'
         self.playlist_titles = list(self.playlist.keys())
 
@@ -142,6 +159,7 @@ class MusicPlayer(QWidget):
                 [
                     shutil.which('mpv'),
                     '--ytdl=yes',
+                    # '--ytdl-raw-options=cookies-from-browser=firefox',
                     '--osc=yes',
                     '--force-window=yes',
                     '--loop=inf',
@@ -155,11 +173,6 @@ class MusicPlayer(QWidget):
         return super().closeEvent(event)
 
 if __name__ == '__main__':
-    file_dir : str = os.path.dirname(os.path.realpath(__file__))
-    frozen_dir = os.path.dirname(sys.executable)
-    executable_dir : str = os.path.dirname(os.path.realpath(__file__))
-    if getattr(sys, 'frozen', False):
-        executable_dir = os.path.dirname(sys.executable)
     os.chdir(executable_dir)
     app : QApplication = QApplication(sys.argv)
     player : MusicPlayer = MusicPlayer()
