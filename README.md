@@ -7,5 +7,7 @@ It uses PySide6, YTMusic API, and MPV
 
 ## Commands
 `/CACHE` is used to make a JSON playlist local copy of a YT playlist for to not always load the playlist tracks on demand
+
 `/RELOAD` is used to reload the playlist combo box
+
 `/ADD` adds a new playlist either Youtube or local folder
