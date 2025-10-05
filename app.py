@@ -56,6 +56,14 @@ class AddPlaylistDialog(QDialog):
 class MusicPlayer(QWidget):
     def __init__(self) -> None:
         super().__init__()
+        self.yt_playlist_path : str = os.path.join(instance_path, 'playlists_yt.json')
+        self.local_playlist_path : str = os.path.join(instance_path, 'playlists_local.json')
+        if not os.path.exists(self.yt_playlist_path):
+            with open(self.yt_playlist_path, 'w') as file:
+                json.dump({}, file)
+        if not os.path.exists(self.local_playlist_path):
+            with open(self.local_playlist_path, 'w') as file:
+                json.dump({}, file)
         
 
         self.config: configparser.ConfigParser = configparser.ConfigParser()
@@ -86,9 +94,9 @@ class MusicPlayer(QWidget):
 
     def load_playlists(self) -> None:
         self.playlist_titles = []
-        with open(os.path.join(instance_path, 'playlists_yt.json'), 'r') as file:
+        with open(self.yt_playlist_path, 'r') as file:
             self.playlist.update({f'YT - {k}': v for k, v in json.load(file).items()})
-        with open(os.path.join(instance_path, 'playlists_local.json'), 'r') as file:
+        with open(self.local_playlist_path, 'r') as file:
             self.playlist.update({f'LOCAL - {k}': v for k, v in json.load(file).items()})
         
         for f in glob.glob(os.path.join(instance_path, 'cache_*.json')):
@@ -178,8 +186,8 @@ class MusicPlayer(QWidget):
     def entry_enter(self) -> None:
         match self.entry_filter.text():
             case '/CACHE':
-                with open(os.path.join(instance_path, f'cache_{self.selected_playlist}.json'), 'w', encoding='utf-8') as f:
-                    json.dump(self.tracks, f, indent=4, ensure_ascii=False)
+                with open(os.path.join(instance_path, f'cache_{self.selected_playlist}.json'), 'w', encoding='utf-8') as file:
+                    json.dump(self.tracks, file, indent=4, ensure_ascii=False)
                 self.reload_playlists()
                 return
             case '/RELOAD':
@@ -198,15 +206,15 @@ class MusicPlayer(QWidget):
 
                     playlists : dict[str, str] = {}
                     if os.path.exists(json_path):
-                        with open(json_path, 'r', encoding='utf-8') as f:
+                        with open(json_path, 'r', encoding='utf-8') as file:
                             try:
-                                playlists = json.load(f)
+                                playlists = json.load(file)
                             except json.JSONDecodeError:
                                 playlists = {}
 
                     playlists[name] = url
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(playlists, f, indent=4, ensure_ascii=False)
+                    with open(json_path, 'w', encoding='utf-8') as file:
+                        json.dump(playlists, file, indent=4, ensure_ascii=False)
                     self.reload_playlists()
                 else:
                     self.entry_filter.clear()
@@ -278,8 +286,8 @@ class MusicPlayer(QWidget):
         recents: list[Track] = []
         if os.path.exists(self.recents_path):
             try:
-                with open(self.recents_path, 'r', encoding='utf-8') as f:
-                    recents = json.load(f)
+                with open(self.recents_path, 'r', encoding='utf-8') as file:
+                    recents = json.load(file)
             except Exception:
                 recents = []
 
@@ -287,8 +295,8 @@ class MusicPlayer(QWidget):
         recents.append(track)
         recents = recents[-self.config.getint('user', 'recents'):]
 
-        with open(self.recents_path, 'w', encoding='utf-8') as f:
-            json.dump(recents, f, indent=4, ensure_ascii=False)
+        with open(self.recents_path, 'w', encoding='utf-8') as file:
+            json.dump(recents, file, indent=4, ensure_ascii=False)
 
     def closeEvent(self, event):
         if self.player:
