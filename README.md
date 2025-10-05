@@ -1,3 +1,7 @@
+<p align="center">
+  <img width="240pt" src="./icon.svg">
+</p>
+
 # Genesis Music Player
 A QT6 Youtube Music Playlist Player, is now video only playing through MPV. Basically a playlist loader/helper.
 
