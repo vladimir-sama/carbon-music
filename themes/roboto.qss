@@ -1,0 +1,4 @@
+QWidget {
+    font-family: 'Roboto Condensed Light';
+    font-size: 10px;
+}
