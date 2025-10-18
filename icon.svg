@@ -105,14 +105,14 @@
        gradientUnits="userSpaceOnUse" />
   </defs>
   <circle
-     style="fill:#cbbbe9;stroke:#000000;stroke-width:0.3175;stroke-linecap:square;stroke-opacity:1;paint-order:stroke fill markers"
+     style="fill:#bfbfbf;stroke:#000000;stroke-width:0.3175;stroke-linecap:square;stroke-opacity:1;paint-order:stroke fill markers"
      id="path8"
      cx="8.4666662"
      cy="8.4666662"
      r="7.3259554" />
   <path
      sodipodi:type="star"
-     style="fill:#c8a9fa;stroke:url(#radialGradient4);stroke-width:0.3175;stroke-linecap:square;paint-order:stroke fill markers"
+     style="fill:#404040;stroke:url(#radialGradient4);stroke-width:0.3175;stroke-linecap:square;paint-order:stroke fill markers"
      id="path3"
      inkscape:flatsided="false"
      sodipodi:sides="3"
@@ -128,7 +128,7 @@
      inkscape:transform-center-x="-0.57450635"
      transform="translate(2.2069134,3.9642563)" />
   <rect
-     style="fill:#a8cbfe;stroke:url(#radialGradient8);stroke-width:0.3175;stroke-linecap:square;paint-order:stroke fill markers"
+     style="fill:#404040;stroke:url(#radialGradient8);stroke-width:0.3175;stroke-linecap:square;paint-order:stroke fill markers"
      id="rect6"
      width="6.6391468"
      height="1.5262406"

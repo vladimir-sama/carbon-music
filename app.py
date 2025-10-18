@@ -18,6 +18,8 @@ executable_dir : str = os.path.dirname(os.path.realpath(__file__))
 if getattr(sys, 'frozen', False):
     executable_dir = os.path.dirname(sys.executable)
 
+os.chdir(executable_dir)
+
 instance_path : str = os.path.join(executable_dir, 'instance')
 os.makedirs(instance_path, exist_ok=True)
 
@@ -122,7 +124,7 @@ class MusicPlayer(QWidget):
         layout.addWidget(self.entry_filter)
 
         self.list_tracks : QListWidget = QListWidget()
-        self.list_tracks.itemDoubleClicked.connect(self.select_track)
+        self.list_tracks.itemActivated.connect(self.select_track)
         layout.addWidget(self.list_tracks)
 
         self.label_track : QLabel = QLabel('(NA)')
@@ -245,6 +247,7 @@ class MusicPlayer(QWidget):
         with open(self.recents_path, 'r', encoding='utf-8') as f:
             data : list[Track] = json.load(f)
         data = data[-self.config.getint('user', 'recents'):]
+        data.reverse()
         self.tracks = data
         self.update_track_list()
 
@@ -304,7 +307,6 @@ class MusicPlayer(QWidget):
         return super().closeEvent(event)
 
 if __name__ == '__main__':
-    os.chdir(executable_dir)
     icon_path : str = os.path.join(executable_dir, 'icon.svg')
     icon : QIcon = QIcon(icon_path)
 
